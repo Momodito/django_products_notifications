@@ -2,17 +2,14 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from .models import Product, User
-from .serializers import ProductSerializer, UserSerializer, AdminRegistrationSerializer
+from .serializers import UserSerializer, AdminRegistrationSerializer, FullProductSerializer, BasicProductSerializer
 from core.permissions import IsAdminUser
-from django.core.mail import send_mail
-from django.conf import settings
-from threading import Thread
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
-from django.db.models import F, Sum, Count
+from django.db.models import F, Sum
 from datetime import datetime, timedelta
 import logging
-from .tasks import send_product_update_notification
+from .tasks import send_product_update_notification, send_product_creation_notification, send_product_deletion_notification
 from django.db import transaction
 from django.db.models import Avg
 
@@ -24,7 +21,13 @@ from drf_yasg import openapi
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
-    serializer_class = ProductSerializer
+    serializer_class = FullProductSerializer  # Serializador por defecto (completo)
+    
+    def get_serializer_class(self):
+        # Si es list/retrieve y usuario no autenticado, usa el serializador básico
+        if self.action in ['list', 'retrieve'] and not self.request.user.is_authenticated:
+            return BasicProductSerializer
+        return FullProductSerializer
     
     def get_permissions(self):
         if self.action in ['list', 'retrieve', 'stats', 'view_analytics']:
@@ -65,8 +68,37 @@ class ProductViewSet(viewsets.ModelViewSet):
                         exc_info=True)
 
     def perform_create(self, serializer):
-        """Crea un producto y asigna el creador"""
-        serializer.save(created_by=self.request.user)
+        """Crea un producto, asigna el creador y notifica a los admins"""
+        instance = serializer.save(created_by=self.request.user)
+        
+        if self.request.user.is_admin:
+            product_data = {
+                'id': instance.id,
+                'name': instance.name,
+                'sku': instance.sku,
+                'brand': instance.brand,
+                'created_at': instance.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            send_product_creation_notification.delay(
+                product_data=product_data,
+                created_by_id=self.request.user.id
+            )
+
+    def perform_destroy(self, instance):
+        """Elimina un producto y notifica a los admins"""
+        if self.request.user.is_admin:
+            product_data = {
+                'id': instance.id,
+                'name': instance.name,
+                'sku': instance.sku,
+                'brand': instance.brand,
+                'deleted_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            send_product_deletion_notification.delay(
+                product_data=product_data,
+                deleted_by_id=self.request.user.id
+            )
+        instance.delete()
 
     def perform_update(self, serializer):
         """Actualiza un producto y notifica cambios"""

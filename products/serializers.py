@@ -10,11 +10,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 dotenv_path = join(BASE_DIR, '.env')
 load_dotenv(dotenv_path)
 
-class ProductSerializer(serializers.ModelSerializer):
+class BasicProductSerializer(serializers.ModelSerializer):
+    """Serializador para usuarios no autenticados (solo campos básicos)"""
+    class Meta:
+        model = Product
+        fields = ['name', 'price', 'brand']
+        read_only_fields = fields  # Todos los campos son solo lectura
+        extra_kwargs = {
+            'name': {'required': False},
+            'price': {'required': False},
+            'brand': {'required': False}
+        }
+
+class FullProductSerializer(serializers.ModelSerializer):
+    """Serializador completo para usuarios autenticados"""
     class Meta:
         model = Product
         fields = '__all__'
-        read_only_fields = ('created_by', 'created_at', 'updated_at')
+        read_only_fields = ('created_by', 'created_at', 'updated_at', 'last_updated_by')
         extra_kwargs = {
             'sku': {'required': False},
             'name': {'required': False},
@@ -23,13 +36,15 @@ class ProductSerializer(serializers.ModelSerializer):
         }
     
     def create(self, validated_data):
+        """Asigna el usuario creador al producto"""
         validated_data['created_by'] = self.context['request'].user
         return super().create(validated_data)
     
     def update(self, instance, validated_data):
-        # Elimina campos no proporcionados para mantener los valores existentes
+        """Actualización personalizada para mantener valores existentes"""
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        instance.last_updated_by = self.context['request'].user
         instance.save()
         return instance
     

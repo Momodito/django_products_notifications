@@ -62,7 +62,7 @@ def send_product_creation_notification(self, product_data, created_by_id):
             'date': datetime.now().strftime("%d/%m/%Y %H:%M")
         }
 
-        html_message = render_to_string('products/emails/product_action.html', context)
+        html_message = render_to_string('products/emails/product_created.html', context)
         text_message = strip_tags(html_message)
         subject = f"➕ Nuevo Producto: {product_data['name']}"
 
@@ -95,7 +95,7 @@ def send_product_deletion_notification(self, product_data, deleted_by_id):
             'date': datetime.now().strftime("%d/%m/%Y %H:%M")
         }
 
-        html_message = render_to_string('products/emails/product_action.html', context)
+        html_message = render_to_string('products/emails/product_deleted.html', context)
         text_message = strip_tags(html_message)
         subject = f"❌ Producto Eliminado: {product_data['name']}"
 
